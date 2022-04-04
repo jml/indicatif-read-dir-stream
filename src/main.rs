@@ -13,7 +13,7 @@ async fn main() -> io::Result<()> {
     let progress = ProgressBar::new(2);
     // TODO: This code does not compile.
     // error[E0507]: cannot move out of `progress`, a captured variable in an `FnMut` closure
-    xs_iter.try_for_each_concurrent(1, |x| async move {
+    xs_iter.try_for_each(|x| async move {
         println!("{}", x);
         progress.inc(1);
         Ok(())
