@@ -1,9 +1,11 @@
-use core::pin::Pin;
 use futures::stream::{self, TryStreamExt, iter};
 use futures::task::{Context, Poll};
 use indicatif::ProgressBar;
+use pin_project_lite::pin_project;
 use std::io;
+use std::pin::Pin;
 use tokio;
+use tokio::time::{self, Duration};
 
 
 #[tokio::main]
@@ -15,43 +17,54 @@ async fn main() -> io::Result<()> {
 }
 
 
-struct ProgressStream<S: stream::Stream> {
-    progress_bar: ProgressBar,
-    stream: S,
-}
-
-
-impl<S: stream::Stream + std::marker::Unpin> stream::Stream for ProgressStream<S> {
-    type Item = S::Item;
-
-    fn poll_next(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.stream).poll_next(ctx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => {
-                self.progress_bar.finish();
-                Poll::Ready(None)
-            }
-            Poll::Ready(Some(x)) => {
-                self.progress_bar.inc(1);
-                Poll::Ready(Some(x))
-            }
-        }
+pin_project! {
+    struct ProgressStream<S: stream::Stream> {
+        progress_bar: ProgressBar,
+        #[pin]
+        stream: S,
     }
 }
 
 
+impl<S: stream::Stream> stream::Stream for ProgressStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
+        let result = this.stream.as_mut().poll_next(ctx);
+        match &result {
+            Poll::Pending => (),
+            Poll::Ready(None) => {
+                this.progress_bar.finish();
+            }
+            Poll::Ready(_) => {
+                this.progress_bar.inc(1);
+            }
+        };
+        result
+    }
+}
+
+
+/// A bad example of how to update a progress bar by consuming a stream.
+///
+/// Each of the items in the stream will be processed serially, with no concurrency.
+/// This is because streams only let you get the first item from the stream when it's ready,
+/// which is quite reasonable when you think about it.
 async fn async_loop() -> io::Result<()> {
-    let xs = vec![Ok(1), Ok(2)];
+    use futures::FutureExt;
+
+    let xs = vec![Ok(2000), Ok(1000), Ok(3000), Ok(4000)];
     let progress = ProgressBar::new(xs.len() as u64);
-    let progress_stream = ProgressStream { progress_bar: progress, stream: iter(xs) };
-    // TODO: This code does not compile.
-    // error[E0507]: cannot move out of `progress`, a captured variable in an `FnMut` closure
-    progress_stream.try_for_each(|_x| async move {
+    let stream = iter(xs).and_then(|x| { time::sleep(Duration::from_millis(x)).map(Ok) });
+    let progress_stream = ProgressStream { progress_bar: progress, stream: stream };
+    progress_stream.try_for_each_concurrent(4, |_x| async move {
         Ok(())
     }).await
 }
 
 
+/// An example of updating a progress bar with purely synchronous logic.
 fn sync_loop() {
     let xs = vec![1, 2];
     let progress = ProgressBar::new(xs.len() as u64);
