@@ -74,3 +74,21 @@ fn sync_loop() {
     });
     progress.finish();
 }
+
+
+// A bad example of how to update a progress bar by consuming a stream.
+//
+// Each of the items in the stream will be processed serially, with no concurrency.
+// This is because streams only let you get the first item from the stream when it's ready,
+// which is quite reasonable when you think about it.
+//
+// async fn broken_async_loop() {
+//     let xs = vec![Ok(2000), Ok(1000), Ok(3000), Ok(4000)];
+//     let progress = ProgressBar::new(xs.len() as u64);
+//     let stream = iter(xs);
+//     stream.try_for_each_concurrent(4, |x| async move {
+//         time::sleep(Duration::from_millis(x)).await;
+//         progress.inc(1);
+//         Ok(())
+//     }).await
+// }
