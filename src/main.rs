@@ -13,7 +13,9 @@ async fn main() -> io::Result<()> {
     println!("Synchronous bar");
     sync_loop();
     println!("Async bar");
-    async_loop().await
+    async_loop().await?;
+    println!("Working async bar");
+    working_async_loop().await
 }
 
 
@@ -92,3 +94,31 @@ fn sync_loop() {
 //         Ok(())
 //     }).await
 // }
+
+
+async fn working_async_loop() -> io::Result<()> {
+    let xs: Vec<Duration> = vec![2000, 1000, 3000, 4000].into_iter().map(Duration::from_millis).collect();
+    let runner = ProgressRunner::new();
+    runner.run(4, xs).await
+}
+
+
+struct ProgressRunner {
+    progress_bar: ProgressBar,
+}
+
+impl ProgressRunner {
+    fn new() -> Self {
+        ProgressRunner {progress_bar: ProgressBar::new(0)}
+    }
+
+    async fn run(&self, limit: usize, times: Vec<Duration>) -> io::Result<()> {
+        self.progress_bar.set_length(times.len() as u64);
+        let stream = iter(times.into_iter().map(|x| -> io::Result<Duration> { Ok(x) }));
+        stream.try_for_each_concurrent(limit, |x| async move {
+            time::sleep(x).await;
+            self.progress_bar.inc(1);
+            Ok(())
+        }).await
+    }
+}
