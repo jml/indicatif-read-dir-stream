@@ -113,6 +113,8 @@ impl ProgressRunner {
     }
 
     async fn run(&self, limit: usize, times: Vec<Duration>) -> io::Result<()> {
+        // If we make the progress bar a member of the struct, we do not encounter this moving problem.
+        // TODO(jml): I wonder if pinning is the answer.
         self.progress_bar.set_length(times.len() as u64);
         let stream = iter(times.into_iter().map(|x| -> io::Result<Duration> { Ok(x) }));
         stream.try_for_each_concurrent(limit, |x| async move {
