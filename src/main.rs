@@ -15,7 +15,9 @@ async fn main() -> io::Result<()> {
     println!("Async bar");
     async_loop().await?;
     println!("Working async bar");
-    working_async_loop().await
+    working_async_loop().await?;
+    println!("Pinned & working async bar");
+    pinned_async_loop().await
 }
 
 
@@ -123,4 +125,19 @@ impl ProgressRunner {
             Ok(())
         }).await
     }
+}
+
+
+/// Rather than requiring the progress bar to be a field of the struct,
+/// we *pin* it, so that it does not move.
+async fn pinned_async_loop() -> io::Result<()> {
+    let times: Vec<Duration> = vec![2000, 1000, 3000, 4000].into_iter().map(Duration::from_millis).collect();
+    let progress_bar = ProgressBar::new(times.len() as u64);
+    let progress_bar = Pin::new(&progress_bar);
+    let stream = iter(times.into_iter().map(|x| -> io::Result<Duration> { Ok(x) }));
+    stream.try_for_each_concurrent(4, |x| async move {
+        time::sleep(x).await;
+            progress_bar.inc(1);
+        Ok(())
+    }).await
 }
